@@ -1,8 +1,8 @@
-# YouTube Downloader 📥
+# YouTube Downloader 
 
 Ứng dụng giúp bạn tải Video và Âm thanh từ YouTube cực kỳ đơn giản và chất lượng cao.
 
-## ✨ Tính năng chính
+## Tính năng chính
 - **Tải Video/MP3:** Hỗ trợ mọi độ phân giải (360p, 720p, 1080p, 4K).
 - **Playlist:** Tải cả danh sách phát chỉ bằng một đường link.
 - **Tốc độ cao:** Tối ưu hóa luồng tải, không quảng cáo.
@@ -10,7 +10,7 @@
 
 ---
 
-## 🚀 Hướng dẫn cài đặt (Dành cho người dùng)
+## Hướng dẫn cài đặt (Dành cho người dùng)
 
 ### Bước 1: Tải ứng dụng
 Vào mục **[Releases](https://github.com/phanan04/yt-d/releases)** và tải tệp `yt-d.exe` về máy.
@@ -26,7 +26,7 @@ YouTube lưu video và âm thanh riêng biệt cho chất lượng cao, nên b�
 
 ---
 
-## 📖 Cách sử dụng
+## Cách sử dụng
 1.  Mở ứng dụng `yt-d.exe`.
 2.  Dán link YouTube (Video hoặc Playlist).
 3.  Chọn định dạng (**Video** hoặc **Âm thanh**) và chất lượng mong muốn.
