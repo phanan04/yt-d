@@ -13,7 +13,12 @@ Bạn không cần phải biết lập trình để sử dụng phần mềm nà
 ## ✨ Tính năng nổi bật
 *   **Giao diện trực quan:** Đơn giản, đẹp mắt (Responsive, tự động co giãn) với Dark/Light Mode.
 *   **Tải đa định dạng:** Hỗ trợ tải Video (có hình và tiếng) hoặc chỉ tải file Âm thanh (MP3).
-*   **Tùy chọn chất lượng:** Tự do tùy chỉnh độ phân giải từ 360p lên đến xịn nhất (1080p, v.v.) hoặc chất lượng bit-rate âm thanh.
+*   **Tùy chọn chất lượng:** Tự do tùy chỉnh độ phân giải từ 360p lên đến xịn nhất (1080p, 1440p, v.v.) hoặc chất lượng bit-rate âm thanh.
+*   **Xem trước thông tin & thumbnail:** Dán link hoặc gõ tên bài hát, ứng dụng sẽ hiển thị ảnh bìa, tiêu đề, tên kênh và thời lượng trước khi tải.
+*   **Hỗ trợ Playlist:** Công tắc "Tải cả Playlist" cho phép tải lần lượt toàn bộ video trong danh sách phát, có hiển thị tiến trình `Video i/n`.
+*   **Tải nhiều video cùng lúc:** Mỗi lần bấm "TẢI XUỐNG" sẽ tạo một thẻ tiến trình riêng, cho phép tải song song nhiều video kèm trạng thái chi tiết.
+*   **Tự bắt link từ Clipboard:** Khi chuyển focus sang ứng dụng, nếu clipboard đang có link YouTube thì ô nhập link sẽ tự động điền giúp bạn.
+*   **Lịch sử tải xuống:** Lưu lại các video đã tải (tiêu đề, thời gian, đường dẫn), kèm nút "Mở file" và "Mở thư mục" để truy cập nhanh.
 *   **Video Hội viên:** Tính năng trích xuất Cookie từ trình duyệt web đang dùng (Chrome, Edge...) để tải được cả các video giới hạn/video riêng tư/hội viên.
 *   **Siêu nhẹ & Nhanh:** Được viết bằng Python (với thư viện customtkinter và yt-dlp) giúp tải luồng tốc độ cao.
 
@@ -35,6 +40,12 @@ pip install -r requirements.txt
 ### 3. Chạy ứng dụng:
 ```bash
 python main.py
+```
+
+Hoặc trên Windows có thể double-click file:
+
+```bat
+run.bat
 ```
 
 ### 4. Cách đóng gói lại thành file .EXE:
