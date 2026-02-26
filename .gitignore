@@ -19,7 +19,6 @@ installer/
 
 # Application specific
 config.json
-history.json
 
 # IDEs
 .vscode/

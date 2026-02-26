@@ -5,166 +5,190 @@ import time
 import io
 import shutil
 import webbrowser
+import sys
 from datetime import datetime
 
-import requests
-from PIL import Image, ImageTk
-import customtkinter as ctk
-import yt_dlp
-from tkinter import filedialog, messagebox
+# Ghi lai loi neu co
+def log_error(e):
+    try:
+        with open("crash.log", "a", encoding="utf-8") as f:
+            f.write(f"\n[{datetime.now()}] ERROR: {str(e)}\n")
+            import traceback
+            f.write(traceback.format_exc())
+            f.write("\n" + "="*50 + "\n")
+    except: pass
 
-ctk.set_appearance_mode("System")  # Chế độ: "System" (Mặc định), "Dark", "Light"
-ctk.set_default_color_theme("blue")  # Chủ đề màu: "blue" (Mặc định), "green", "dark-blue"
+try:
+    import requests
+    from PIL import Image, ImageTk
+    import customtkinter as ctk
+    import yt_dlp
+    from tkinter import filedialog, messagebox
+except ImportError as e:
+    log_error(e)
+    print(f"Lỗi: Thiếu thư viện. Vui lòng chạy run.bat để cài đặt: {e}")
+    sys.exit(1)
+
+# Chế độ: "System" (Mặc định), "Dark", "Light"
+ctk.set_appearance_mode("System")
+# Chủ đề màu: "blue" (Mặc định), "green", "dark-blue"
+ctk.set_default_color_theme("blue")
 
 class YouTubeDownloaderApp(ctk.CTk):
     def __init__(self):
         super().__init__()
 
-        self.title("Trình Tải YouTube Cá Nhân")
-        self.geometry("750x650")
-        self.minsize(650, 550)
+        # --- Cấu hình cửa sổ ---
+        self.title("YT-D")
+        self.geometry("1000x700")
+        self.minsize(950, 680)
+        
+        # --- Khởi tạo dữ liệu ---
+        self.history_file = "history.json"
+        self.config_file = "config.json"
         self.last_update_time = 0
         self.ffmpeg_available = False
-        self.history_file = "history.json"
         self.history = self.load_history()
-        
-        # Tiêu đề
-        self.title_label = ctk.CTkLabel(self, text="Tải Video/Audio YouTube", font=ctk.CTkFont(size=24, weight="bold"))
-        self.title_label.pack(pady=20)
-        
-        # Khung nhập URL
-        self.url_frame = ctk.CTkFrame(self, fg_color="transparent")
-        self.url_frame.pack(pady=5, padx=20, fill="x")
-        
-        self.url_label = ctk.CTkLabel(self.url_frame, text="Đường dẫn (URL) HOẶC Tên bài hát:", font=ctk.CTkFont(size=14))
-        self.url_label.pack(anchor="w")
-        
-        self.url_entry = ctk.CTkEntry(self.url_frame, placeholder_text="Dán link YouTube hoặc nhập tên bài hát để tự tìm và tải...")
-        self.url_entry.pack(fill="x", pady=(5, 10))
+        self.save_dir = self.load_config()
+        self._thumbnail_image_ref = None
+
+        # --- Bố cục chính (Sidebar + Content) ---
+        self.grid_columnconfigure(1, weight=1)
+        self.grid_rowconfigure(0, weight=1)
+
+        # 1. SIDEBAR (Navigation & Options)
+        self.sidebar = ctk.CTkFrame(self, width=280, corner_radius=0)
+        self.sidebar.grid(row=0, column=0, sticky="nsew")
+        self.sidebar.grid_rowconfigure(15, weight=1) # Spacer
+
+        self.logo_label = ctk.CTkLabel(self.sidebar, text="📥", font=ctk.CTkFont(size=22, weight="bold"))
+        self.logo_label.grid(row=0, column=0, padx=30, pady=(40, 30), sticky="w")
+
+        self.setup_sidebar_widgets()
+
+        # 2. MAIN CONTENT AREA
+        self.main_container = ctk.CTkFrame(self, fg_color="transparent")
+        self.main_container.grid(row=0, column=1, sticky="nsew", padx=35, pady=(35, 10))
+        self.main_container.grid_columnconfigure(0, weight=1)
+        self.main_container.grid_rowconfigure(3, weight=1)
+
+        # Tiêu đề & Lời chào
+        self.welcome_label = ctk.CTkLabel(self.main_container, text="Bắt đầu tải nội dung mới", font=ctk.CTkFont(size=28, weight="bold"))
+        self.welcome_label.grid(row=0, column=0, sticky="w", pady=(0, 25))
+
+        # --- Khu vực nhập URL ---
+        self.setup_url_section()
+
+        # --- Khu vực Xem trước thông tin ---
+        self.setup_preview_section()
+
+        # --- Danh sách tác vụ đang tải ---
+        self.setup_tasks_section()
+
+        # --- Thanh trạng thái & Thư mục lưu (Bottom) ---
+        self.setup_bottom_bar()
+
+        # Cài đặt ban đầu
+        self.check_ffmpeg()
         self.bind("<FocusIn>", self.on_focus_in)
 
-        # Nút xem trước thông tin
-        self.preview_button = ctk.CTkButton(self.url_frame, text="Xem thông tin", width=120, command=self.preview_info)
-        self.preview_button.pack(anchor="e", pady=(0, 10))
-
-        # Khung hiển thị thông tin & thumbnail
-        self.preview_frame = ctk.CTkFrame(self, fg_color="transparent")
-        self.preview_frame.pack(pady=5, padx=20, fill="x")
-
-        self.thumbnail_label = ctk.CTkLabel(self.preview_frame, text="")
-        self.thumbnail_label.grid(row=0, column=0, rowspan=3, padx=(0, 10), pady=5, sticky="w")
-
-        self.video_title_label = ctk.CTkLabel(self.preview_frame, text="", anchor="w", justify="left")
-        self.video_title_label.grid(row=0, column=1, sticky="w")
-
-        self.video_channel_label = ctk.CTkLabel(self.preview_frame, text="", anchor="w", justify="left")
-        self.video_channel_label.grid(row=1, column=1, sticky="w")
-
-        self.video_duration_label = ctk.CTkLabel(self.preview_frame, text="", anchor="w", justify="left")
-        self.video_duration_label.grid(row=2, column=1, sticky="w")
-
-        self._thumbnail_image_ref = None
-        
-        # Khung tùy chọn
-        self.options_frame = ctk.CTkFrame(self, fg_color="transparent")
-        self.options_frame.pack(pady=5, padx=20, fill="x")
-        
-        # Grid config
-        self.options_frame.columnconfigure(1, weight=1)
-        
-        # Định dạng
-        self.format_label = ctk.CTkLabel(self.options_frame, text="Định dạng tải:")
-        self.format_label.grid(row=0, column=0, sticky="w", padx=5, pady=5)
+    def setup_sidebar_widgets(self):
+        # --- CẤU HÌNH TẢI ---
+        ctk.CTkLabel(self.sidebar, text="CẤU HÌNH TẢI", font=ctk.CTkFont(size=12, weight="bold"), text_color="gray").grid(row=1, column=0, padx=30, pady=(10, 5), sticky="w")
         
         self.format_var = ctk.StringVar(value="Video (MP4)")
-        self.format_combobox = ctk.CTkComboBox(self.options_frame, values=[
-            "Video (MP4)", 
-            "Âm thanh (MP3)"
-        ], variable=self.format_var, command=self.on_format_change)
-        self.format_combobox.grid(row=0, column=1, sticky="ew", padx=5, pady=5)
-        
-        # Chất lượng
-        self.quality_label = ctk.CTkLabel(self.options_frame, text="Chất lượng:")
-        self.quality_label.grid(row=1, column=0, sticky="w", padx=5, pady=5)
-        
+        self.format_combobox = ctk.CTkComboBox(self.sidebar, values=["Video (MP4)", "Âm thanh (MP3)"], variable=self.format_var, command=self.on_format_change, height=35)
+        self.format_combobox.grid(row=2, column=0, padx=25, pady=10, sticky="ew")
+
         self.quality_var = ctk.StringVar(value="Tốt nhất (Khuyên dùng)")
-        self.quality_combobox = ctk.CTkComboBox(self.options_frame, values=[
-            "Tốt nhất (Khuyên dùng)",
-            "1080p",
-            "720p",
-            "480p",
-            "360p"
-        ], variable=self.quality_var)
-        self.quality_combobox.grid(row=1, column=1, sticky="ew", padx=5, pady=5)
-        
-        # Thư mục lưu
-        self.config_file = "config.json"
-        self.save_dir = self.load_config()
-        
-        self.dir_button = ctk.CTkButton(self.options_frame, text="Chọn Thư Mục", command=self.choose_directory, width=120)
-        self.dir_button.grid(row=2, column=0, sticky="w", padx=5, pady=5)
-        
-        self.dir_label = ctk.CTkLabel(self.options_frame, text=f"{self.save_dir}", text_color="gray")
-        self.dir_label.grid(row=2, column=1, sticky="ew", padx=5, pady=5)
-        
-        # Trình duyệt (Cookies)
-        self.cookie_label = ctk.CTkLabel(self.options_frame, text="Video Hội Viên (Cookie từ):")
-        self.cookie_label.grid(row=3, column=0, sticky="w", padx=5, pady=5)
-        
-        self.cookie_var = ctk.StringVar(value="Không dùng")
-        self.cookie_combobox = ctk.CTkComboBox(self.options_frame, values=[
-            "Không dùng", 
-            "chrome", 
-            "edge", 
-            "firefox",
-            "brave",
-            "opera",
-            "vivaldi"
-        ], variable=self.cookie_var)
-        self.cookie_combobox.grid(row=3, column=1, sticky="ew", padx=5, pady=5)
+        self.quality_combobox = ctk.CTkComboBox(self.sidebar, values=["Tốt nhất (Khuyên dùng)", "1080p", "720p", "480p", "360p"], variable=self.quality_var, height=35)
+        self.quality_combobox.grid(row=3, column=0, padx=25, pady=10, sticky="ew")
 
-        # Công tắc tải playlist
         self.playlist_var = ctk.BooleanVar(value=False)
-        self.playlist_switch = ctk.CTkSwitch(self.options_frame, text="Tải cả Playlist (nếu có)", variable=self.playlist_var)
-        self.playlist_switch.grid(row=4, column=0, columnspan=2, sticky="w", padx=5, pady=5)
-        
-        # Khung tiến trình
-        self.progress_frame = ctk.CTkFrame(self, fg_color="transparent")
-        self.progress_frame.pack(pady=10, padx=20, fill="x")
-        
-        self.status_label = ctk.CTkLabel(self.progress_frame, text="Sẵn sàng.", font=ctk.CTkFont(size=13))
-        self.status_label.pack(anchor="w")
-        
-        self.progress_bar = ctk.CTkProgressBar(self.progress_frame)
-        self.progress_bar.pack(fill="x", pady=5)
-        self.progress_bar.set(0)
+        self.playlist_switch = ctk.CTkSwitch(self.sidebar, text="Tải cả Playlist (nếu có)", variable=self.playlist_var)
+        self.playlist_switch.grid(row=4, column=0, padx=30, pady=15, sticky="w")
 
-        # Vùng danh sách các tác vụ tải (đa luồng)
-        self.tasks_label = ctk.CTkLabel(self, text="Danh sách tải:", font=ctk.CTkFont(size=14, weight="bold"))
-        self.tasks_label.pack(anchor="w", padx=20, pady=(0, 5))
+        # --- Cookie/Hội viên ---
+        ctk.CTkLabel(self.sidebar, text="DÙNG BROWSER COOKIE", font=ctk.CTkFont(size=12, weight="bold"), text_color="gray").grid(row=5, column=0, padx=30, pady=(20, 5), sticky="w")
+        self.cookie_var = ctk.StringVar(value="Không dùng")
+        self.cookie_combobox = ctk.CTkComboBox(self.sidebar, values=["Không dùng", "chrome", "edge", "firefox", "brave", "opera", "vivaldi"], variable=self.cookie_var, height=35)
+        self.cookie_combobox.grid(row=6, column=0, padx=25, pady=10, sticky="ew")
 
-        self.tasks_frame = ctk.CTkScrollableFrame(self, fg_color="transparent", height=200)
-        self.tasks_frame.pack(fill="both", expand=True, padx=20)
-        
-        # Nút Tải
-        self.download_button = ctk.CTkButton(self, text="TẢI XUỐNG", command=self.start_download, font=ctk.CTkFont(size=16, weight="bold"), height=40)
-        self.download_button.pack(pady=(10, 5))
+        # --- Quản lý ---
+        ctk.CTkLabel(self.sidebar, text="CÔNG CỤ", font=ctk.CTkFont(size=12, weight="bold"), text_color="gray").grid(row=7, column=0, padx=30, pady=(20, 5), sticky="w")
+        self.history_button = ctk.CTkButton(self.sidebar, text="📜 Lịch sử tải", height=35, fg_color="transparent", border_width=1, anchor="w", command=self.open_history_window)
+        self.history_button.grid(row=8, column=0, padx=25, pady=10, sticky="ew")
 
-        # Nút lịch sử
-        self.history_button = ctk.CTkButton(self, text="Lịch sử tải", command=self.open_history_window, height=32)
-        self.history_button.pack(pady=(0, 10))
-
-        # Cảnh báo FFmpeg (nếu cần)
-        self.ffmpeg_notice_label = ctk.CTkLabel(self, text="", text_color="orange", wraplength=680, justify="left")
-        self.ffmpeg_notice_label.pack(pady=(0, 5), padx=20, anchor="w")
-
-        self.ffmpeg_button = ctk.CTkButton(self, text="Tải FFmpeg", command=self.open_ffmpeg_download_page, height=28)
-        self.ffmpeg_button.pack(pady=(0, 10))
+        self.ffmpeg_button = ctk.CTkButton(self.sidebar, text="⚙️ Tải FFmpeg", height=35, fg_color="transparent", border_width=1, anchor="w", command=self.open_ffmpeg_download_page)
+        self.ffmpeg_button.grid(row=9, column=0, padx=25, pady=10, sticky="ew")
         self.ffmpeg_button.configure(state="disabled")
 
-        # Kiểm tra FFmpeg khi khởi động
-        self.check_ffmpeg()
+        self.ffmpeg_notice_label = ctk.CTkLabel(self.sidebar, text="", text_color="orange", font=ctk.CTkFont(size=11), wraplength=220, justify="left")
+        self.ffmpeg_notice_label.grid(row=14, column=0, padx=30, pady=20, sticky="s")
+
+    def setup_url_section(self):
+        self.url_section = ctk.CTkFrame(self.main_container, corner_radius=15, fg_color=("gray95", "#242424"), border_width=1, border_color=("gray85", "#333333"))
+        self.url_section.grid(row=1, column=0, sticky="ew", pady=10)
+        self.url_section.grid_columnconfigure(0, weight=1)
+
+        self.url_entry = ctk.CTkEntry(self.url_section, placeholder_text="Dán link YouTube hoặc nhập tên bài hát cần tìm...", height=55, border_width=0, fg_color="transparent", font=ctk.CTkFont(size=15))
+        self.url_entry.grid(row=0, column=0, padx=(20, 10), pady=12, sticky="ew")
+
+        self.preview_button = ctk.CTkButton(self.url_section, text="🔍 Kiểm tra", width=130, height=45, corner_radius=10, font=ctk.CTkFont(weight="bold"), command=self.preview_info)
+        self.preview_button.grid(row=0, column=1, padx=20, pady=12)
+
+    def setup_preview_section(self):
+        self.preview_card = ctk.CTkFrame(self.main_container, corner_radius=15, height=180, fg_color=("white", "#2b2b2b"), border_width=1, border_color=("gray90", "#3d3d3d"))
+        self.preview_card.grid(row=2, column=0, sticky="ew", pady=20)
         
+        # Dung grid bên trong preview_card để an toàn hơn place
+        self.preview_card.grid_columnconfigure(1, weight=1)
+        self.preview_card.grid_columnconfigure(2, weight=0)
+
+        # Thumbnail
+        self.thumbnail_label = ctk.CTkLabel(self.preview_card, text="🎬", font=ctk.CTkFont(size=50), width=220, height=130, fg_color=("gray90", "#1e1e1e"), corner_radius=10)
+        self.thumbnail_label.grid(row=0, column=0, rowspan=3, padx=25, pady=25)
+
+        # Thông tin
+        self.video_title_label = ctk.CTkLabel(self.preview_card, text="Thông tin video sẽ hiện ở đây", font=ctk.CTkFont(size=16, weight="bold"), anchor="w", justify="left")
+        self.video_title_label.grid(row=0, column=1, sticky="w", pady=(30, 0))
+
+        self.video_channel_label = ctk.CTkLabel(self.preview_card, text="Kênh: ---", text_color="gray", anchor="w")
+        self.video_channel_label.grid(row=1, column=1, sticky="w", pady=(5, 0))
+
+        self.video_duration_label = ctk.CTkLabel(self.preview_card, text="Thời lượng: ---", text_color="gray", anchor="w")
+        self.video_duration_label.grid(row=2, column=1, sticky="w", pady=(5, 30))
+
+        # Nút Tải chính
+        self.download_button = ctk.CTkButton(self.preview_card, text="TẢI XUỐNG NGAY", width=180, height=50, corner_radius=25, font=ctk.CTkFont(size=14, weight="bold"), command=self.start_download)
+        self.download_button.grid(row=0, column=2, rowspan=3, padx=25, sticky="e")
+
+    def setup_tasks_section(self):
+        self.tasks_header_frame = ctk.CTkFrame(self.main_container, fg_color="transparent")
+        self.tasks_header_frame.grid(row=3, column=0, sticky="sw", pady=(20, 8))
+        
+        ctk.CTkLabel(self.tasks_header_frame, text="Danh sách đang tải", font=ctk.CTkFont(size=15, weight="bold")).pack(side="left")
+        
+        self.tasks_frame = ctk.CTkScrollableFrame(self.main_container, fg_color=("gray95", "#1e1e1e"), corner_radius=15, height=250)
+        self.tasks_frame.grid(row=4, column=0, sticky="nsew", pady=(0, 10))
+
+    def setup_bottom_bar(self):
+        self.bottom_bar = ctk.CTkFrame(self, height=50, fg_color="transparent")
+        self.bottom_bar.grid(row=1, column=1, sticky="ew", padx=35)
+        
+        self.dir_label = ctk.CTkLabel(self.bottom_bar, text=f"📂 {self.save_dir}", font=ctk.CTkFont(size=12), text_color="gray", cursor="hand2")
+        self.dir_label.pack(side="left", pady=10)
+        self.dir_label.bind("<Button-1>", lambda e: self.choose_directory())
+
+        self.status_label = ctk.CTkLabel(self.bottom_bar, text="Sẵn sàng.", font=ctk.CTkFont(size=12, weight="bold"), text_color="gray")
+        self.status_label.pack(side="right", pady=10)
+
+        self.progress_bar = ctk.CTkProgressBar(self, height=4, corner_radius=0)
+        self.progress_bar.place(relx=0.28, rely=0.99, relwidth=0.72)
+        self.progress_bar.set(0)
+
+    # --- LOGIC XỬ LÝ (GIỮ NGUYÊN VÀ KIỂM TRA LỖI) ---
+
     def on_format_change(self, choice):
         if choice == "Âm thanh (MP3)":
             self.quality_combobox.configure(values=["320 kbps (Tốt nhất)", "256 kbps", "192 kbps (Tiêu chuẩn)", "128 kbps"])
@@ -180,10 +204,8 @@ class YouTubeDownloaderApp(ctk.CTk):
                 with open(self.config_file, "r", encoding="utf-8") as f:
                     data = json.load(f)
                     saved_dir = data.get("save_dir", "")
-                    if saved_dir and os.path.isdir(saved_dir):
-                        return saved_dir
-            except Exception:
-                pass
+                    if saved_dir and os.path.isdir(saved_dir): return saved_dir
+            except Exception: pass
         return default_dir
 
     def load_history(self):
@@ -191,418 +213,252 @@ class YouTubeDownloaderApp(ctk.CTk):
             try:
                 with open(self.history_file, "r", encoding="utf-8") as f:
                     data = json.load(f)
-                    if isinstance(data, list):
-                        return data
-            except Exception:
-                pass
+                    if isinstance(data, list): return data
+            except Exception: pass
         return []
 
     def save_history(self):
         try:
             with open(self.history_file, "w", encoding="utf-8") as f:
                 json.dump(self.history, f, ensure_ascii=False, indent=4)
-        except Exception:
-            pass
+        except Exception: pass
 
     def add_history_entry(self, title, filename):
-        if not filename:
-            return
+        if not filename: return
         entry = {
             "title": title or os.path.basename(filename),
             "file": os.path.abspath(filename),
             "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         }
         self.history.insert(0, entry)
-        # Giới hạn lịch sử, ví dụ 200 mục gần nhất
         self.history = self.history[:200]
         self.save_history()
 
     def format_duration(self, seconds):
-        if seconds is None:
-            return "Thời lượng: Không rõ"
+        if seconds is None: return "Không rõ"
         try:
             seconds = int(seconds)
             h = seconds // 3600
             m = (seconds % 3600) // 60
             s = seconds % 60
-            if h > 0:
-                return f"Thời lượng: {h:02d}:{m:02d}:{s:02d}"
-            return f"Thời lượng: {m:02d}:{s:02d}"
-        except Exception:
-            return "Thời lượng: Không rõ"
+            return f"{h:02d}:{m:02d}:{s:02d}" if h > 0 else f"{m:02d}:{s:02d}"
+        except Exception: return "Không rõ"
 
     def check_ffmpeg(self):
         self.ffmpeg_available = shutil.which("ffmpeg") is not None
         if self.ffmpeg_available:
-            self.ffmpeg_notice_label.configure(text="FFmpeg đã được phát hiện. Bạn có thể tải video chất lượng cao và chuyển đổi MP3.")
+            self.ffmpeg_notice_label.configure(text="✅ FFmpeg đã được cài đặt.", text_color="green")
             self.ffmpeg_button.configure(state="disabled")
         else:
-            self.ffmpeg_notice_label.configure(
-                text="Không tìm thấy FFmpeg trên hệ thống. Một số định dạng/độ phân giải cao và chuyển đổi MP3 cần FFmpeg để hoạt động ổn định."
-            )
+            self.ffmpeg_notice_label.configure(text="⚠️ Cảnh báo: Thiếu FFmpeg. Tải video 1080p/MP3 có thể lỗi.")
             self.ffmpeg_button.configure(state="normal")
 
     def open_ffmpeg_download_page(self):
-        try:
-            webbrowser.open("https://ffmpeg.org/download.html")
-        except Exception:
-            messagebox.showerror("Lỗi", "Không thể mở trang tải FFmpeg. Vui lòng truy cập ffmpeg.org bằng trình duyệt của bạn.")
+        try: webbrowser.open("https://ffmpeg.org/download.html")
+        except: messagebox.showerror("Lỗi", "Vui lòng truy cập ffmpeg.org.")
 
     def clear_preview(self):
         self._thumbnail_image_ref = None
-        self.thumbnail_label.configure(image=None, text="")
-        self.video_title_label.configure(text="")
-        self.video_channel_label.configure(text="")
-        self.video_duration_label.configure(text="")
+        self.thumbnail_label.configure(image=None, text="🎬")
+        self.video_title_label.configure(text="Đang chờ kiểm tra...")
+        self.video_channel_label.configure(text="Kênh: ---")
+        self.video_duration_label.configure(text="Thời lượng: ---")
 
     def on_focus_in(self, event):
-        # Tự động bắt link từ clipboard nếu là link YouTube
         try:
             clip = self.clipboard_get().strip()
-        except Exception:
-            clip = ""
-        if not clip:
-            return
-        lower = clip.lower()
-        is_youtube = (
-            lower.startswith("http")
-            and ("youtube.com" in lower or "youtu.be" in lower)
-        )
-        if is_youtube:
-            current = self.url_entry.get().strip()
-            if not current:
-                self.url_entry.delete(0, "end")
-                self.url_entry.insert(0, clip)
+            if clip and ("youtube.com" in clip.lower() or "youtu.be" in clip.lower()):
+                current = self.url_entry.get().strip()
+                if not current:
+                    self.url_entry.delete(0, "end")
+                    self.url_entry.insert(0, clip)
+        except: pass
 
     def preview_info(self):
         url = self.url_entry.get().strip()
         if not url:
-            messagebox.showinfo("Thiếu thông tin", "Vui lòng dán link hoặc nhập tên bài hát trước khi xem thông tin.")
+            messagebox.showinfo("Thiếu thông tin", "Vui lòng dán link hoặc nhập tên bài hát.")
             return
 
-        # Hỗ trợ tìm kiếm theo tên bài hát
-        search_mode = False
-        if not url.startswith("http") and not url.startswith("www."):
-            url = f"ytsearch1:{url}"
-            search_mode = True
+        search_mode = not (url.startswith("http") or url.startswith("www."))
+        if search_mode: url = f"ytsearch1:{url}"
 
-        self.update_status("Đang lấy thông tin video...", "white")
+        self.update_status("Đang lấy thông tin...", "white")
         self.progress_bar.set(0)
         self.clear_preview()
 
         def worker():
             try:
-                ydl_opts = {
-                    'quiet': True,
-                    'skip_download': True,
-                    'noplaylist': not self.playlist_var.get(),
-                }
+                ydl_opts = {'quiet': True, 'skip_download': True, 'noplaylist': not self.playlist_var.get()}
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                     info = ydl.extract_info(url, download=False)
 
-                # Nếu là kết quả tìm kiếm, info có thể là một dict chứa 'entries'
-                if info.get('_type') == 'playlist' and info.get('entries'):
-                    first_entry = info['entries'][0]
-                else:
-                    first_entry = info
-
-                title = first_entry.get('title', 'Không rõ tiêu đề')
-                channel = first_entry.get('uploader') or first_entry.get('channel') or "Không rõ kênh"
+                first_entry = info['entries'][0] if info.get('_type') == 'playlist' and info.get('entries') else info
+                title = first_entry.get('title', 'Không rõ')
+                channel = first_entry.get('uploader') or first_entry.get('channel') or "Không rõ"
                 duration_text = self.format_duration(first_entry.get('duration'))
-                thumb_url = None
-
-                # Thử lấy thumbnail tốt nhất
-                if first_entry.get('thumbnails'):
-                    thumb_url = first_entry['thumbnails'][-1].get('url')
-                else:
-                    thumb_url = first_entry.get('thumbnail')
+                thumb_url = first_entry.get('thumbnails')[-1].get('url') if first_entry.get('thumbnails') else first_entry.get('thumbnail')
 
                 img_ref = None
                 if thumb_url:
                     try:
                         resp = requests.get(thumb_url, timeout=10)
-                        resp.raise_for_status()
-                        img_data = resp.content
-                        pil_img = Image.open(io.BytesIO(img_data)).convert("RGB")
-                        pil_img.thumbnail((160, 90))
+                        pil_img = Image.open(io.BytesIO(resp.content)).convert("RGB")
+                        pil_img.thumbnail((220, 130))
                         img_ref = ImageTk.PhotoImage(pil_img)
-                    except Exception:
-                        img_ref = None
+                    except: pass
 
                 def on_ui():
-                    if img_ref is not None:
+                    if img_ref:
                         self._thumbnail_image_ref = img_ref
                         self.thumbnail_label.configure(image=self._thumbnail_image_ref, text="")
-                    else:
-                        self.clear_preview()
-                    self.video_title_label.configure(text=f"Tiêu đề: {title}")
+                    self.video_title_label.configure(text=title)
                     self.video_channel_label.configure(text=f"Kênh: {channel}")
-                    self.video_duration_label.configure(text=duration_text)
-
-                    # Nếu là playlist, hiển thị số lượng video
+                    
+                    final_dur = f"Thời lượng: {duration_text}"
                     if info.get('_type') == 'playlist':
                         count = len(info.get('entries') or [])
-                        if count:
-                            self.video_duration_label.configure(
-                                text=f"{duration_text} | Playlist: {count} video"
-                            )
+                        if count: final_dur += f" | 📂 Playlist: {count} video"
+                    self.video_duration_label.configure(text=final_dur)
 
-                    if search_mode:
-                        # Gán lại URL chính xác cho ô nhập
-                        real_url = first_entry.get('webpage_url')
-                        if real_url:
-                            self.url_entry.delete(0, "end")
-                            self.url_entry.insert(0, real_url)
+                    if search_mode and first_entry.get('webpage_url'):
+                        self.url_entry.delete(0, "end")
+                        self.url_entry.insert(0, first_entry['webpage_url'])
 
-                    self.update_status("Đã lấy thông tin xong, sẵn sàng tải.", "green")
+                    self.update_status("Sẵn sàng tải.", "green")
                     self.progress_bar.set(0)
 
                 self.after(0, on_ui)
             except Exception as e:
-                err = str(e)
-                self.after(0, self.clear_preview)
-                self.after(0, self.update_status, f"Lỗi khi lấy thông tin: {err}", "red")
+                self.after(0, self.update_status, f"Lỗi: {str(e)[:50]}...", "red")
 
         threading.Thread(target=worker, daemon=True).start()
 
     def create_task_ui(self, title_display):
-        frame = ctk.CTkFrame(self.tasks_frame)
-        frame.pack(fill="x", pady=4)
+        frame = ctk.CTkFrame(self.tasks_frame, fg_color=("white", "#2b2b2b"), border_width=1, border_color=("gray90", "#333333"))
+        frame.pack(fill="x", pady=6, padx=10)
 
-        title_label = ctk.CTkLabel(frame, text=title_display, anchor="w", justify="left")
-        title_label.pack(anchor="w", padx=5, pady=(3, 0))
+        header = ctk.CTkFrame(frame, fg_color="transparent")
+        header.pack(fill="x", padx=15, pady=(10, 5))
 
-        status_label = ctk.CTkLabel(frame, text="Đang chờ bắt đầu...", anchor="w", justify="left", font=ctk.CTkFont(size=12))
-        status_label.pack(anchor="w", padx=5)
+        lbl = ctk.CTkLabel(header, text=title_display[:60]+"..." if len(title_display)>60 else title_display, font=ctk.CTkFont(size=13, weight="bold"), anchor="w")
+        lbl.pack(side="left", fill="x", expand=True)
 
-        bar = ctk.CTkProgressBar(frame)
-        bar.pack(fill="x", padx=5, pady=(0, 5))
+        stop = ctk.CTkButton(header, text="✕", width=28, height=28, corner_radius=14, fg_color="transparent", hover_color="#cc3300", text_color=("black", "white"), command=lambda: self.remove_task(task))
+        stop.pack(side="right")
+
+        status = ctk.CTkLabel(frame, text="Đang chờ...", font=ctk.CTkFont(size=11), text_color="gray")
+        status.pack(anchor="w", padx=15, pady=(0, 5))
+
+        bar = ctk.CTkProgressBar(frame, height=8, corner_radius=4)
+        bar.pack(fill="x", padx=15, pady=(0, 15))
         bar.set(0)
 
-        return {
-            "frame": frame,
-            "title_label": title_label,
-            "status_label": status_label,
-            "bar": bar,
-        }
+        task = {"frame": frame, "status_label": status, "bar": bar, "cancelled": False}
+        return task
+
+    def remove_task(self, task):
+        task["cancelled"] = True
+        try: task["frame"].destroy()
+        except: pass
+        self.progress_bar.set(0)
+        self.update_status("Sẵn sàng.", "gray")
 
     def open_history_window(self):
         if not self.history:
-            messagebox.showinfo("Lịch sử tải", "Chưa có mục tải nào được lưu.")
+            messagebox.showinfo("Lịch sử tải", "Chưa có mục tải nào.")
             return
-
         win = ctk.CTkToplevel(self)
         win.title("Lịch sử tải")
-        win.geometry("700x400")
-
+        win.geometry("800x500")
+        win.after(100, lambda: win.focus()) # Fix focus
+        
         frame = ctk.CTkScrollableFrame(win)
-        frame.pack(fill="both", expand=True, padx=10, pady=10)
+        frame.pack(fill="both", expand=True, padx=20, pady=20)
 
         for entry in self.history:
             row = ctk.CTkFrame(frame)
-            row.pack(fill="x", pady=4)
-
-            info_text = f"{entry.get('time', '')} - {entry.get('title', '')}"
-            info_label = ctk.CTkLabel(row, text=info_text, anchor="w", justify="left")
-            info_label.pack(side="left", fill="x", expand=True, padx=5)
-
+            row.pack(fill="x", pady=6, padx=10)
+            ctk.CTkLabel(row, text=f"{entry.get('time', '')} - {entry.get('title', '')}", anchor="w", justify="left").pack(side="left", fill="x", expand=True, padx=15)
             file_path = entry.get("file")
-
-            open_btn = ctk.CTkButton(row, text="Mở file", width=80, command=lambda p=file_path: self.open_file(p))
-            open_btn.pack(side="right", padx=5)
-
-            folder_btn = ctk.CTkButton(row, text="Mở thư mục", width=100, command=lambda p=file_path: self.open_folder(p))
-            folder_btn.pack(side="right", padx=5)
-
-    def open_file(self, path):
-        if not path or not os.path.exists(path):
-            messagebox.showerror("Lỗi", "File không tồn tại nữa.")
-            return
-        try:
-            os.startfile(path)
-        except Exception as e:
-            messagebox.showerror("Lỗi", f"Không thể mở file: {e}")
-
-    def open_folder(self, path):
-        if not path or not os.path.exists(path):
-            messagebox.showerror("Lỗi", "File không tồn tại nữa.")
-            return
-        folder = os.path.dirname(path)
-        try:
-            os.startfile(folder)
-        except Exception as e:
-            messagebox.showerror("Lỗi", f"Không thể mở thư mục: {e}")
-
-    def save_config(self):
-        try:
-            with open(self.config_file, "w", encoding="utf-8") as f:
-                json.dump({"save_dir": self.save_dir}, f, ensure_ascii=False, indent=4)
-        except Exception:
-            pass
+            ctk.CTkButton(row, text="Mở file", width=90, command=lambda p=file_path: os.startfile(p) if os.path.exists(p) else messagebox.showerror("Lỗi", "File không tồn tại")).pack(side="right", padx=10, pady=10)
 
     def choose_directory(self):
         dir_path = filedialog.askdirectory(initialdir=self.save_dir)
         if dir_path:
             self.save_dir = dir_path
-            self.dir_label.configure(text=self.save_dir)
-            self.save_config()
+            self.dir_label.configure(text=f"📂 {self.save_dir}")
+            try:
+                with open(self.config_file, "w", encoding="utf-8") as f:
+                    json.dump({"save_dir": self.save_dir}, f, ensure_ascii=False, indent=4)
+            except: pass
 
     def progress_hook(self, d):
         if d['status'] == 'downloading':
-            try:
-                # Calculate progress
-                total_bytes = d.get('total_bytes') or d.get('total_bytes_estimate')
-                downloaded = d.get('downloaded_bytes', 0)
-                if total_bytes:
-                    percent = downloaded / total_bytes
-                    percent_str = d.get('_percent_str', 'N/A')
-                    speed_str = d.get('_speed_str', 'N/A')
-
-                    # Thông tin playlist (nếu có)
-                    playlist_index = d.get('info_dict', {}).get('playlist_index')
-                    playlist_count = d.get('info_dict', {}).get('n_entries')
-                    playlist_text = ""
-                    if playlist_index and playlist_count:
-                        playlist_text = f" | Video {playlist_index}/{playlist_count}"
-                    
-                    # Throttle UI updates to prevent UI from freezing
-                    current_time = time.time()
-                    if current_time - getattr(self, "last_update_time", 0) > 0.1 or percent >= 1.0:
-                        self.last_update_time = current_time
-                        self.after(0, self.update_progress, percent, percent_str + playlist_text, speed_str)
-            except Exception:
-                pass
+            total = d.get('total_bytes') or d.get('total_bytes_estimate')
+            downloaded = d.get('downloaded_bytes', 0)
+            if total:
+                percent = downloaded / total
+                current_time = time.time()
+                if current_time - self.last_update_time > 0.1 or percent >= 1.0:
+                    self.last_update_time = current_time
+                    self.after(0, self.update_progress, percent, f"{d.get('_percent_str', 'N/A')} • {d.get('_speed_str', 'N/A')}")
         elif d['status'] == 'finished':
-            self.after(0, self.update_status, "Đang xử lý/Ghép file... (Vui lòng đợi)\nLưu ý: yt-dlp cần FFmpeg để xử lý video chất lượng cao.", "orange")
+            self.after(0, self.update_status, "Đang xử lý/Ghép file...", "orange")
 
-    def update_progress(self, percent, percent_str, speed_str):
+    def update_progress(self, percent, text):
         self.progress_bar.set(percent)
-        self.status_label.configure(text=f"Đang tải... {percent_str} (Tốc độ: {speed_str})", text_color="#1f538d")
+        self.status_label.configure(text=f"Đang tải: {text}", text_color="#1f538d")
 
     def update_status(self, text, color="white"):
         self.status_label.configure(text=text, text_color=color)
 
     def download_thread(self, url, is_audio, browser_cookie, quality, task_ui):
         def task_hook(d):
-            status = d.get("status")
-            info = d.get("info_dict") or {}
-            title = info.get("title") or url
-
-            if status == "downloading":
-                total_bytes = d.get('total_bytes') or d.get('total_bytes_estimate')
-                downloaded = d.get('downloaded_bytes', 0)
-                if not total_bytes:
-                    return
-                percent = downloaded / total_bytes
-                percent_str = d.get('_percent_str', 'N/A')
-                speed_str = d.get('_speed_str', 'N/A')
-
-                playlist_index = info.get('playlist_index')
-                playlist_count = info.get('n_entries')
-                playlist_text = ""
-                if playlist_index and playlist_count:
-                    playlist_text = f" | Video {playlist_index}/{playlist_count}"
-
-                def ui_update():
-                    task_ui["bar"].set(percent)
-                    task_ui["status_label"].configure(
-                        text=f"{percent_str}{playlist_text} (Tốc độ: {speed_str})"
-                    )
-                self.after(0, ui_update)
-
-                # Cập nhật thanh tổng quan
-                try:
-                    self.progress_hook(d)
-                except Exception:
-                    pass
-
-            elif status == "finished":
-                filename = d.get("filename")
-                def ui_finish():
-                    task_ui["bar"].set(1)
-                    task_ui["status_label"].configure(text="Hoàn tất!")
-                    self.add_history_entry(title, filename)
-                self.after(0, ui_finish)
+            if task_ui.get("cancelled"): raise Exception("Cancelled")
+            if d.get("status") == "downloading":
+                total = d.get('total_bytes') or d.get('total_bytes_estimate')
+                if total:
+                    p = d.get('downloaded_bytes', 0) / total
+                    self.after(0, lambda: [task_ui["bar"].set(p), task_ui["status_label"].configure(text=f"{d.get('_percent_str')} • Tốc độ: {d.get('_speed_str')}")])
+                try: self.progress_hook(d)
+                except: pass
+            elif d.get("status") == "finished":
+                self.after(0, lambda: [task_ui["bar"].set(1), task_ui["status_label"].configure(text="✅ Hoàn tất!", text_color="green"), self.add_history_entry(d.get("info_dict", {}).get("title") or url, d.get("filename"))])
 
         try:
-            ydl_opts = {
-                'outtmpl': os.path.join(self.save_dir, '%(title)s.%(ext)s'),
-                'progress_hooks': [task_hook],
-                'noplaylist': not self.playlist_var.get(),
-                # Nếu không có ffmpeg, yt-dlp có thể báo lỗi nu cố ghép audio+video
-                # Bạn cài thêm ffmpeg vào system path để yt-dlp hoạt động tốt nhất.
-            }
-
-            if browser_cookie != "Không dùng":
-                ydl_opts['cookiesfrombrowser'] = (browser_cookie, )
+            ydl_opts = {'outtmpl': os.path.join(self.save_dir, '%(title)s.%(ext)s'), 'progress_hooks': [task_hook], 'noplaylist': not self.playlist_var.get()}
+            if browser_cookie != "Không dùng": ydl_opts['cookiesfrombrowser'] = (browser_cookie,)
             
             if is_audio:
-                # Xử lý chọn bitrate cho âm thanh
-                bitrate = "320"
-                if "256" in quality: bitrate = "256"
-                elif "192" in quality: bitrate = "192"
-                elif "128" in quality: bitrate = "128"
-                
-                ydl_opts['format'] = 'bestaudio/best'
-                ydl_opts['postprocessors'] = [{
-                    'key': 'FFmpegExtractAudio',
-                    'preferredcodec': 'mp3',
-                    'preferredquality': bitrate,
-                }]
+                bitrate = quality.split()[0] if quality[0].isdigit() else "320"
+                ydl_opts.update({'format': 'bestaudio/best', 'postprocessors': [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3', 'preferredquality': bitrate}]})
             else:
-                # Xử lý chọn độ phân giải video
-                if quality == "Tốt nhất (Khuyên dùng)":
-                    ydl_opts['format'] = 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best'
-                else:
-                    # Lọc lấy số (VD: 1080, 720)
-                    res = ''.join([c for c in quality if c.isdigit()])
-                    # Cú pháp yt-dlp: tải độ phân giải nhỏ hơn hoặc bằng res
-                    ydl_opts['format'] = f'bestvideo[ext=mp4][height<={res}]+bestaudio[ext=m4a]/best[ext=mp4][height<={res}]/best'
+                res = ''.join(c for c in quality if c.isdigit())
+                if res: ydl_opts['format'] = f'bestvideo[ext=mp4][height<={res}]+bestaudio[ext=m4a]/best[ext=mp4][height<={res}]/best'
+                else: ydl_opts['format'] = 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best'
 
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                ydl.download([url])
-                
-            self.after(0, self.update_status, f"Tải xuống hoàn tất! Đã lưu tại:\n{self.save_dir}", "green")
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl: ydl.download([url])
+            self.after(0, self.update_status, "Tải xuống hoàn tất!", "green")
             self.after(0, self.progress_bar.set, 1)
-            
         except Exception as e:
-            error_msg = str(e)
-            print(f"Lỗi: {error_msg}")
-            self.after(0, self.update_status, f"Lỗi: {error_msg}", "red")
+            if not task_ui.get("cancelled"): self.after(0, self.update_status, f"Lỗi: {str(e)[:50]}", "red")
 
     def start_download(self):
         url = self.url_entry.get().strip()
-        if not url:
-            messagebox.showwarning("Thiếu thông tin", "Vui lòng dán đường dẫn hoặc nhập tên bài hát cần tải!")
-            return
-            
-        # Nếu người dùng nhập tên bài hát thay vì link, sử dụng ytsearch1: để tải kết quả tìm kiếm đầu tiên
-        if not url.startswith("http") and not url.startswith("www."):
-            url = f"ytsearch1:{url}"
-            
-        is_audio = "Âm thanh" in self.format_var.get()
-        browser_cookie = self.cookie_var.get()
-        quality_choice = self.quality_var.get()
-
-        # Cảnh báo nếu thiếu FFmpeg mà chọn chế độ cần xử lý
-        if not self.ffmpeg_available and (is_audio or "1080" in quality_choice or "1440" in quality_choice or "Tốt nhất" in quality_choice):
-            messagebox.showwarning(
-                "Thiếu FFmpeg",
-                "Bạn đang chọn định dạng/chất lượng cần FFmpeg (MP3 hoặc video trên 720p).\n"
-                "Vui lòng cài FFmpeg để đảm bảo tải và ghép file không lỗi."
-            )
+        if not url: return
+        if not url.startswith("http"): url = f"ytsearch1:{url}"
         
-        self.status_label.configure(text="Đang lấy thông tin.. Nếu dùng cookie, yt-dlp cần thời gian đọc trình duyệt!", text_color="white")
-        self.progress_bar.set(0)
-
-        # Tạo UI riêng cho tác vụ này
-        task_title = self.url_entry.get().strip() or url
-        task_ui = self.create_task_ui(task_title)
-
-        # Chạy luồng riêng biệt để không làm đơ giao diện
-        thread = threading.Thread(target=self.download_thread, args=(url, is_audio, browser_cookie, quality_choice, task_ui), daemon=True)
-        thread.start()
+        is_audio = "Âm thanh" in self.format_var.get()
+        quality = self.quality_var.get()
+        task_ui = self.create_task_ui(self.url_entry.get().strip() or url)
+        threading.Thread(target=self.download_thread, args=(url, is_audio, self.cookie_var.get(), quality, task_ui), daemon=True).start()
 
 if __name__ == "__main__":
-    app = YouTubeDownloaderApp()
-    app.mainloop()
+    try:
+        app = YouTubeDownloaderApp()
+        app.mainloop()
+    except Exception as e:
+        log_error(e)
+        print(f"Ứng dụng gặp lỗi khi khởi động. Chi tiết đã được ghi vào crash.log")
+        input("Nhấn Enter để thoát...")
