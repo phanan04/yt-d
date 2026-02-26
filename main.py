@@ -187,8 +187,6 @@ class YouTubeDownloaderApp(ctk.CTk):
         self.progress_bar.place(relx=0.28, rely=0.99, relwidth=0.72)
         self.progress_bar.set(0)
 
-    # --- LOGIC XỬ LÝ (GIỮ NGUYÊN VÀ KIỂM TRA LỖI) ---
-
     def on_format_change(self, choice):
         if choice == "Âm thanh (MP3)":
             self.quality_combobox.configure(values=["320 kbps (Tốt nhất)", "256 kbps", "192 kbps (Tiêu chuẩn)", "128 kbps"])
