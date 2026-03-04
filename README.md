@@ -1,36 +1,52 @@
-# YouTube Downloader 
+# YT-D
 
-Ứng dụng giúp bạn tải Video và Âm thanh từ YouTube cực kỳ đơn giản và chất lượng cao.
-
-## Tính năng chính
-- **Tải Video/MP3:** Hỗ trợ mọi độ phân giải (360p, 720p, 1080p, 4K).
-- **Playlist:** Tải cả danh sách phát chỉ bằng một đường link.
-- **Tốc độ cao:** Tối ưu hóa luồng tải, không quảng cáo.
-- **Giao diện tiếng Việt:** Trực quan, dễ sử dụng, hỗ trợ Dark Mode.
+Ứng dụng tải video và âm thanh từ YouTube — hỗ trợ playlist, nội dung hội viên, tải song song, giao diện Dark Mode.
 
 ---
 
-## Hướng dẫn cài đặt (Dành cho người dùng)
+## Tính năng
 
-### Bước 1: Tải ứng dụng
-Vào mục **[Releases](https://github.com/phanan04/yt-d/releases)** và tải tệp `yt-d.exe` về máy.
-
-### Bước 2: Cài đặt FFmpeg (Bắt buộc để tải Video chất lượng HD/4K)
-YouTube lưu video và âm thanh riêng biệt cho chất lượng cao, nên bạn cần **FFmpeg** để ghép chúng lại.
-
-1.  **Tải FFmpeg:** Truy cập [gyan.dev](https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip) để tải bản nén (`.zip`).
-2.  **Giải nén:** Mở file vừa tải, vào thư mục `bin`, bạn sẽ thấy file `ffmpeg.exe`.
-3.  **Sử dụng:** 
-    - **Cách dễ nhất:** Copy file `ffmpeg.exe` vào cùng thư mục với ứng dụng `yt-d.exe` của bạn.
-    - **Cách chuyên nghiệp:** Thêm thư mục chứa FFmpeg vào `Environment Variables` (Path) của Windows.
+- Tải video MP4 (360p → 1080p) và âm thanh MP3 (128–320 kbps)
+- Tải toàn bộ playlist, chọn range (ví dụ: video 10–50)
+- Bỏ qua video đã tải (download archive)
+- Tải song song tối đa 16 luồng
+- Hỗ trợ nội dung hội viên qua cookies.txt
+- Xem trước thông tin video/playlist trước khi tải
+- Lịch sử tải, Dark/Light Mode
 
 ---
 
-## Cách sử dụng
-1.  Mở ứng dụng `yt-d.exe`.
-2.  Dán link YouTube (Video hoặc Playlist).
-3.  Chọn định dạng (**Video** hoặc **Âm thanh**) và chất lượng mong muốn.
-4.  Nhấn nút **TẢI XUỐNG** và đợi trong giây lát.
+## Yêu cầu
+
+| Thành phần | Ghi chú |
+|---|---|
+| [FFmpeg](https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip) | Bắt buộc để ghép video+audio (HD/4K) |
+| [Node.js ≥ 20](https://nodejs.org) | Bắt buộc để giải n-challenge của YouTube |
+
+Đặt `ffmpeg.exe` và `node.exe` vào PATH, hoặc cùng thư mục với `YT-D.exe`.
 
 ---
-*Lưu ý: Nếu không có FFmpeg, ứng dụng chỉ có thể tải video tối đa 720p hoặc file MP3.*
+
+## Cài đặt
+
+**Dùng bản release (khuyên dùng):**
+```
+Releases → tải YT-D.exe → chạy thẳng, không cần cài Python
+```
+
+---
+
+## Tải nội dung hội viên
+
+1. Mở trình duyệt, vào `youtube.com` và đảm bảo đang đăng nhập có hội viên
+2. Cài extension **[Get cookies.txt LOCALLY](https://chrome.google.com/webstore/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc)**
+3. Trên trang YouTube, nhấn extension → **Export** → lưu file `.txt`
+4. Trong app: nhấn **"Chọn file cookies.txt"** → chọn file vừa lưu
+
+> Cookie hết hạn sau vài tuần. Nếu gặp lỗi xác thực, export lại.
+
+---
+
+## License
+
+MIT

@@ -19,6 +19,13 @@ installer/
 
 # Application specific
 config.json
+history.json
+crash.log
+yt-dlp-archive.txt
+
+# Cookie files (sensitive)
+cookies.txt
+*cookies*.txt
 
 # IDEs
 .vscode/
